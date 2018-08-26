@@ -6,77 +6,21 @@ import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from time import time
-from glove_viz_v2 import plot_posture
 import csv
 import pickle
- 
-# update 7/26/2018:
-# intent 22 (finding) is discarded; end of each intend is ignored;
-# add grid search
-# update 8/3/2018:
-# new features & visualization (withlabel_v2, glove_viz_v2)
-# update 8/6/2018:
-# save model
 
 
+# format of the input data:
+# [obj, intend, trial, begin time-stamp, end time-stamp, frequency]
+
+n_info = 5
 num_sensors = 17
-num_features = 20
 
 
-# load trials
-def load_trials(ID, hand, feature=True):
+def get_pca(data, n_features):
+    info = data[:, 0:n_info]
+    fea = data[:, n_info:]
 
-    if feature:
-        path = 'D:\python_program\HandMotionPrimitive\data\withlabel_v3\ID' + str(ID) + '\\feature'
-    else:
-        path = 'D:\python_program\HandMotionPrimitive\data\withlabel_v3\ID' + str(ID)
-    file = os.listdir(path)
-
-    flag = 0
-    if hand == 'L' or hand == 'R':
-        for f in file:
-            fname = os.path.splitext(f)[0]
-            if (hand in fname) and ('fea' in fname):
-                filename = path + '\\' + fname + '.csv'
-                trial_data = np.genfromtxt(filename, delimiter=",")
-                for i in range(trial_data.shape[0]):
-                    if trial_data[i, 1] != 22 and trial_data[i, 1] != 40:  # discard the start & finding phase
-                        if i < trial_data.shape[0]-20:  # not at the end
-                            if trial_data[i, 1] == trial_data[i+20, 1]:  # discard the transition phase
-                                if flag == 0:
-                                    out_data = np.hstack((trial_data[i, :], [i]))
-                                    out_data = np.reshape(out_data, (1, len(out_data)))
-                                    flag = 1
-                                else:
-                                    temp = np.hstack((trial_data[i, :], [i]))
-                                    temp = np.reshape(temp, (1, len(temp)))
-                                    out_data = np.concatenate((out_data, temp))
-                        else:
-                            if flag == 0:
-                                out_data = np.hstack((trial_data[i, :], [i]))
-                                out_data = np.reshape(out_data, (1, len(out_data)))
-                                flag = 1
-                            else:
-                                temp = np.hstack((trial_data[i, :], [i]))
-                                temp = np.reshape(temp, (1, len(temp)))
-                                out_data = np.concatenate((out_data, temp))
-    else:
-        print('wrong hand!')
-        out_data = []
-    return out_data
-
-
-def get_pca(data, n_features, feature=True):
-    exp_info = data[:, 0:2]
-    trial_info = data[:, data.shape[1]-2:data.shape[1]-1]
-    # info[:, 0]: obj number  (0: cylinder, 1: box, 2: disk, 3: ball)
-    # info[:, 1]: intend number (20: explore, 21: excavate, 22: find, 23: retrieve)
-    # info[:, data.shape[1]-2] : trial number
-    # info[:, data.shape[1]-1] : time stamp in trial
-    if feature:
-        fea = data[:, 2:2+num_features]
-    else:
-        fea = data[:, 2:2+4*num_sensors]
     # Prominent component analysis:
     print('Start PCA!')
     pca = PCA(n_components=n_features)
@@ -84,7 +28,7 @@ def get_pca(data, n_features, feature=True):
     fea_pca = pca.transform(fea)
     print('PCA is finished!')
     print('Start plotting result of PCA!')
-    
+
     # 3D-PCA visualization (Higher dimensions??)
     fea_pca_3d = fea_pca[:, 0:3]
     fig = plt.figure()
@@ -92,20 +36,20 @@ def get_pca(data, n_features, feature=True):
     fig.clf()
     ax = fig.add_subplot(111, projection='3d')
     for i in range(fea_pca_3d.shape[0]):
-        if exp_info[i, 1] == 20:
+        if info[i, 1] == 20:
             marker = 'v'
             color = cmap(2)
-        elif exp_info[i, 1] == 21:
+        elif info[i, 1] == 21:
             marker = 's'
             color = cmap(3)
-        elif exp_info[i, 1] == 23:
+        elif info[i, 1] == 23:
             marker = 'd'
             color = cmap(5)
         ax.scatter(fea_pca_3d[i, 0], fea_pca_3d[i, 1], fea_pca_3d[i, 2], c=color, marker=marker)
     plt.title('PCA 3D')
     plt.show()
     print('Plotting is finished!')
-    out_data = np.hstack((exp_info, fea_pca, trial_info))
+    out_data = np.hstack((info, fea_pca))
     return pca, out_data
 
 
@@ -113,7 +57,7 @@ def clustering_posture(data, n_features, threshold=0.5):
     # BIRCH clustering:
     print('Start Birch clustering!')
     brc = Birch(n_clusters=None, threshold=threshold, compute_labels=True)
-    fea_data = data[:, 2:2+n_features]
+    fea_data = data[:, n_info: n_info + n_features]
     t = time()
     brc.fit(fea_data)
     time_ = time() - t
@@ -123,7 +67,6 @@ def clustering_posture(data, n_features, threshold=0.5):
     return brc, time_
 
 
-    # clustering results visulization
 def print_cluster(pca_data, cluster):
     print('Start plotting result of Birch clustering!')
 
@@ -136,8 +79,8 @@ def print_cluster(pca_data, cluster):
     color_index = np.linspace(0, 1, n_class)
     fig.clf()
     ax2 = fig.add_subplot(111, projection='3d')
-    exp_info = pca_data[:, 0:2]
-    coord = pca_data[:, 2:5]
+    exp_info = pca_data[:, 0:n_info]
+    coord = pca_data[:, n_info:]
 
     for i in range(coord.shape[0]):
         if exp_info[i, 1] == 20:
@@ -156,18 +99,31 @@ def print_cluster(pca_data, cluster):
 if __name__ == "__main__":
     ID = 15456
     hand = 'L'
-    feature = True
-    pose_data = load_trials(ID, hand, feature=feature)
+    seg_method = 'window'
+
+    if hand == 'R':
+        handpath = 'right'
+    elif hand == 'L':
+        handpath = 'left'
+    if seg_method == 'window':
+        datapath = 'BoW_window_v2.csv'
+    elif seg_method == 'zero-crossing':
+        datapath = 'BoW_zc_v2.csv'
+
+    datafile = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID'+str(15456)+'\\'+handpath+'\pose\\'+datapath
+    # datafile = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(
+    #     15456) + '\\' + handpath + '\pose\\' + 'ngram_window.csv'
+    data = np.genfromtxt(datafile, delimiter=',')
 
     if hand == 'L':
-        txtpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\\pose\\report.txt'
+        txtpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\\primitive\\report.txt'
     elif hand == 'R':
-        txtpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\\pose\\report.txt'
+        txtpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\\primitive\\report.txt'
     txtfile = open(txtpath, "w")
 
     # PCA
     n_features = 8
-    pca, pca_data = get_pca(pose_data, n_features, feature=True)
+    pca, pca_data = get_pca(data, n_features)
     print(pca.explained_variance_ratio_)
     s = str(pca.explained_variance_ratio_) + '\n'
     txtfile.write(s)
@@ -178,7 +134,7 @@ if __name__ == "__main__":
     txtfile.write('\n')
 
     # grid search
-    threshold_ = np.linspace(0.10, 0.50, 81)  # 0.1-0.5 for angles
+    threshold_ = np.linspace(0.05, 1.00, 191)  # 0.1-0.5 for angles
     s_score_ = np.zeros(threshold_.shape)
     ch_score_ = np.zeros(threshold_.shape)
     n_cluster_ = np.zeros(threshold_.shape)
@@ -191,15 +147,15 @@ if __name__ == "__main__":
             for j in range(i, len(threshold_)):
                 n_cluster_[j] = 1
             break
-        s_score = metrics.silhouette_score(pca_data[:, 2:2+n_features], labels, metric='euclidean')
-        ch_score = metrics.calinski_harabaz_score(pca_data[:, 2:2+n_features], labels)
+        s_score = metrics.silhouette_score(pca_data[:, n_info:], labels, metric='euclidean')
+        ch_score = metrics.calinski_harabaz_score(pca_data[:, n_info:], labels)
         s_score_[i] = s_score
         ch_score_[i] = ch_score
         stop_index = i
 
     ch_score = 0
     for i in range(len(threshold_)):
-        if ch_score_[i] > ch_score and n_cluster_[i] >= 20:
+        if ch_score_[i] > ch_score and n_cluster_[i] >= 10 and n_cluster_[i] <= 50:
             ch_score = ch_score_[i]
             index = i
 
@@ -223,8 +179,8 @@ if __name__ == "__main__":
     # evaluate pca & clustering
     cluster, t = clustering_posture(pca_data, n_features, threshold)
     labels = cluster.labels_
-    s_score = metrics.silhouette_score(pca_data[:, 2:2 + n_features], labels, metric='euclidean')
-    ch_score = metrics.calinski_harabaz_score(pca_data[:, 2:2 + n_features], labels)
+    s_score = metrics.silhouette_score(pca_data[:, n_info:], labels, metric='euclidean')
+    ch_score = metrics.calinski_harabaz_score(pca_data[:, n_info:], labels)
     center = cluster.subcluster_centers_
     cen_labels = cluster.subcluster_labels_
     n_class = len(np.unique(cen_labels))
@@ -244,7 +200,7 @@ if __name__ == "__main__":
     # statistics of the frequency of 4 intends in clusters
     fre_mat = np.zeros((n_class, 3))
     for j in range(len(labels)):
-        intend = pose_data[j, 1]
+        intend = data[j, 1]
         if intend == 20:
             b = 0
         elif intend == 21:
@@ -279,12 +235,12 @@ if __name__ == "__main__":
     plt.show()
 
     if hand == 'L':
-        pcapath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\pose\pca_model.pickle'
-        brcpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\pose\\brc_model.pickle'
+        pcapath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\primitive\pca_model.pickle'
+        brcpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\primitive\\brc_model.pickle'
     elif hand == 'R':
-        pcapath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\pose\pca_model.pickle'
+        pcapath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\primitive\pca_model.pickle'
         brcpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(
-            ID) + '\\right\pose\\brc_model.pickle'
+            ID) + '\\right\primitive\\brc_model.pickle'
     pcafile = open(pcapath, 'wb')
     brcfile = open(brcpath, 'wb')
     pickle.dump(pca, pcafile)
@@ -292,16 +248,15 @@ if __name__ == "__main__":
     pcafile.close()
     brcfile.close()
 
-
-    # visualize the center pose
+    # save the center primitive
     if hand == 'L':
-        cenpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\pose\center.csv'
+        cenpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\primitive\center.csv'
     elif hand == 'R':
-        cenpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\pose\center.csv'
+        cenpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\primitive\center.csv'
     cenfile = open(cenpath, "w", newline='')
     writer = csv.writer(cenfile)
 
-    print("Start plotting the static postures!")
+    print("Start plotting the motion primitives!")
     for i in range(n_class):
         for j in range(len(cen_labels)):
             if cen_labels[j] == i:
@@ -309,39 +264,34 @@ if __name__ == "__main__":
         cen = center[cen_ind, :]
         nearest_ind = 0
         nearest_distance = 10000
-        for j in range(pose_data.shape[0]):
+        for j in range(data.shape[0]):
             if labels[j] == i:
-                distance = np.linalg.norm(pca_data[j, 2:2+n_features]-cen)
+                distance = np.linalg.norm(pca_data[j, n_info:]-cen)
                 if distance < nearest_distance:
                     nearest_distance = distance
                     nearest_ind = j
-                    trial = int(pose_data[nearest_ind, pose_data.shape[1]-2])
-                    time_stamp = int(pose_data[nearest_ind, pose_data.shape[1]-1])
+                    trial = int(data[nearest_ind, 2])
+                    stp = int(data[nearest_ind, 3])
+                    endp = int(data[nearest_ind, 4])
 
-        trialfile = 'D:\python_program\HandMotionPrimitive\data\withlabel_v3\ID' + str(ID) + '\\' + hand + '_IMU_' + str(trial)+'.csv'
-        sensor_data = np.genfromtxt(trialfile, delimiter=",")
-        cen_sensor_data = sensor_data[time_stamp, 2:2+4*num_sensors]
-        plot_posture(cen_sensor_data, ID, trial, hand, i)
-        cen_data = np.hstack(([i], cen_sensor_data, [trial], [time_stamp]))
+        # trialfile = 'D:\python_program\HandMotionPrimitive\data\withlabel_v3\ID' + str(ID) + '\\' + hand + '_IMU_' + str(trial)+'.csv'
+        # sensor_data = np.genfromtxt(trialfile, delimiter=",")
+        # cen_sensor_data = sensor_data[stp:endp, 2:2+4*num_sensors]
+        cen_data = np.hstack(([i], data[nearest_ind, :]))
         writer.writerow(cen_data)
     cenfile.close()
 
     if hand == 'L':
-        labelpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\pose\cluster.csv'
+        labelpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\left\primitive\cluster.csv'
     elif hand == 'R':
-        labelpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\pose\cluster.csv'
+        labelpath = 'D:\python_program\HandMotionPrimitive\Clustering\\results_v4\ID' + str(ID) + '\\right\primitive\cluster.csv'
 
     labelfile = open(labelpath, "w", newline='')
     writer = csv.writer(labelfile)
     labels = np.reshape(labels, (len(labels), 1))
-    cluster_label = np.hstack((pose_data[:, 0:2], labels, pose_data[:, pose_data.shape[1]-2:pose_data.shape[1]]))
+    cluster_label = np.hstack((data, labels))
     for t_pose in range(cluster_label.shape[0]):
         writer.writerow(cluster_label[t_pose, :])
 
     labelfile.close()
     txtfile.close()
-
-
-
-
-
